@@ -137,7 +137,10 @@ def get_from_table(chat_id, pos):
     info = curs.execute('SELECT * FROM users WHERE name=?', (chat_id,)).fetchone()
     connection.close()
     return info[pos]
-API_KEY="6327868399:AAGeN0lxgMjCpkJEohSFL4vYJTyOf8frMEc"
+API_KEY=""
+with open('API_KEY','r') as f:
+    API_KEY=f.readline()
+API_KEY=API_KEY[:-1]
 bot=telebot.TeleBot(API_KEY)
 @bot.message_handler(commands=['start'])
 def hello(message):
