@@ -72,7 +72,6 @@ def get_place(path, snils):
         if (row[2]==snils):
             #print(res[9][2])
             res_mes=res_mes+res[9][2]+'\n'
-            #print()
             res_mes=res_mes+"Место в списке абитуриентов  {0} :  {1}".format(res[1][2], row[0])+'\n'
             return res_mes
 def create_connection(path):
