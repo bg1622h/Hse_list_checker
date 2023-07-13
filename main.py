@@ -4,10 +4,12 @@ from bs4 import BeautifulSoup as bs
 import urllib.request
 import openpyxl
 import telebot
-import sqlite3
-from sqlite3 import Error
 import os
+from DAO import *
 url='https://ba.hse.ru/base2023'
+progs=set()
+DB=DataBase()
+DB.create_table()
 def get_statistic():
     response = requests.get(url)
     soup = bs(response.text, 'lxml')
@@ -74,68 +76,7 @@ def get_place(path, snils):
             res_mes=res_mes+res[9][2]+'\n'
             res_mes=res_mes+"Место в списке абитуриентов  {0} :  {1}".format(res[1][2], row[0])+'\n'
             return res_mes
-def create_connection(path):
-    connection = None
-    try:
-        connection = sqlite3.connect(path)
-        print("Connection to SQLite DB successful")
-    except Error as e:
-        print(f"The error '{e}' occurred")
-
-    return connection
-def execute_query(query):
-    connection = create_connection("users.db")
-    cursor = connection.cursor()
-    try:
-        cursor.execute(query)
-        connection.commit()
-        print("Query executed successfully")
-    except Error as e:
-        print(f"The error '{e}' occurred")
-    cursor.close()
-    connection.close()
-create_users_table = """
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT,
-  Snils TEXT
-);
-"""
-
-create_users = """
-INSERT INTO
-  users (name, Snils)
-VALUES
-  (?, ?);
-"""
-def add_users(chat_id, snils):
-    connection = create_connection("users.db")
-    data_tuple=(chat_id,snils)
-    cursor = connection.cursor()
-    try:
-        cursor.execute(create_users, data_tuple)
-        connection.commit()
-        print("Query executed successfully")
-    except Error as e:
-        print(f"The error '{e}' occurred")
-    cursor.close()
-    connection.close()
-def check_exists_db(chat_id):
-    connection = create_connection("users.db")
-    curs=connection.cursor()
-    info = curs.execute('SELECT * FROM users WHERE name=?', (chat_id,)).fetchone()
-    if info:
-        connection.close()
-        return True
-    else:
-        connection.close()
-        return False
-def get_from_table(chat_id, pos):
-    connection = create_connection("users.db")
-    curs = connection.cursor()
-    info = curs.execute('SELECT * FROM users WHERE name=?', (chat_id,)).fetchone()
-    connection.close()
-    return info[pos]
+    return "Вас нет в списке абитуриентов данной программы"
 API_KEY=""
 with open('API_KEY','r') as f:
     API_KEY=f.readline()
@@ -144,18 +85,42 @@ bot=telebot.TeleBot(API_KEY)
 @bot.message_handler(commands=['start'])
 def hello(message):
     bot.send_message(message.chat.id,"Запуск произведен для пользователя {0}".format(message.chat.id))
-    if not(check_exists_db(message.chat.id)):
+    if not(DB.check_exist(message.chat.id)):
         bot.send_message(message.chat.id, "Отправьте свой номер СНИЛС в формате XXX-XXX-XXX XX")
-        bot.register_next_step_handler(message, add_user)
-def add_user(message):
-    add_users(message.chat.id,message.text)
+        bot.register_next_step_handler(message, add_snils)
+def add_snils(message):
+    #add_users(message.chat.id,message.text)
+    snils=message.text
+    bot.send_message(message.chat.id, "Введите интересующую программу")
+    bot.register_next_step_handler(message, add_program, snils)
+def check_program(program):
+    if (len(progs) == 0):
+        with open("prog_list.txt","r") as f:
+            data=f.read()
+            for line in data.splitlines():
+                #s=s[:-1]
+                progs.add(line)
+    if (program in progs):
+        return True
+    else:
+        return False
+def add_program(message, snils):
+    program=message.text
+    if not(check_program(program)):
+        bot.send_message(message.chat.id,"Такой программы не существует")
+        bot.send_message(message.chat.id, "Введите интересующую программу")
+        bot.register_next_step_handler(message,add_program, snils)
+        return
+    DB.add_user(message.chat.id, snils, program)
     print("Done adding")
 @bot.message_handler(commands=['place'])
 def get_place_pos(message):
     print("place_request_open")
-    snils=get_from_table(message.chat.id, 2)
-    find_program_list("Прикладная математика и информатика")
-    res = get_place("list_abi.xlsx", snils)
+    user=DB.get_from_table(message.chat.id)
+    #snils=get_from_table(message.chat.id)[2]
+    #program=
+    find_program_list(user[3])
+    res = get_place("list_abi.xlsx", user[2])
     bot.send_message(message.chat.id, res)
     os.remove("list_abi.xlsx")
     print("place_request_close")
@@ -163,12 +128,28 @@ def get_place_pos(message):
 def get_statistic_b(message):
     print("statistic_request_open")
     get_statistic()
-    res = get_info_statistic("statistic.xlsx","Прикладная математика и информатика")
+    user=DB.get_from_table(message.chat.id)
+    res = get_info_statistic("statistic.xlsx",user[3])
     bot.send_message(message.chat.id, res)
     os.remove("statistic.xlsx")
     print("statistic_request_close")
-execute_query(create_users_table) #надо же сделать таблицу
-#get_from_table("855175110")
-#add_users(connection,"1","168-186")
-#print(check_exists_db(connection, "1"))
+@bot.message_handler(commands=['set_snils'])
+def getu_snils(message):
+    bot.send_message(message.chat.id, "Отправьте свой номер СНИЛС в формате XXX-XXX-XXX XX")
+    bot.register_next_step_handler(message,ru_snils)
+def ru_snils(message):
+    DB.set_snils(message.chat.id,message.text)
+@bot.message_handler(commands=['set_program'])
+def getu_program(message):
+    bot.send_message(message.chat.id, "Введите интересующую программу")
+    bot.register_next_step_handler(message,ru_program)
+def ru_program(message):
+    program = message.text
+    if not (check_program(program)):
+        bot.send_message(message.chat.id, "Такой программы не существует")
+        bot.send_message(message.chat.id, "Введите интересующую программу")
+        bot.register_next_step_handler(message, ru_program)
+        return
+    DB.set_program(message.chat.id,program)
+    print("Done adding")
 bot.polling()
